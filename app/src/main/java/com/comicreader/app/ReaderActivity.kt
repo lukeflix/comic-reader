@@ -14,7 +14,6 @@ import android.widget.Toast
 import android.graphics.Color
 import android.graphics.Bitmap
 import java.io.File
-import java.io.InputStream
 import java.util.zip.ZipFile
 
 class ReaderActivity : Activity() {
@@ -52,12 +51,17 @@ class ReaderActivity : Activity() {
                 loadPages()
 
                 runOnUiThread {
-                    currentPage = 0
-                    showPage()
+                    if (pages.isEmpty()) {
+                        Toast.makeText(this@ReaderActivity, "Sin imágenes en el archivo", Toast.LENGTH_LONG).show()
+                        finish()
+                    } else {
+                        currentPage = 0
+                        showPage()
+                    }
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@ReaderActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                     finish()
                 }
             }
@@ -163,33 +167,28 @@ class ReaderActivity : Activity() {
     private fun loadPages() {
         pages.clear()
         try {
+            val imageExts = listOf("jpg", "jpeg", "png", "webp", "bmp", "gif")
             ZipFile(tempFile).use { zip ->
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
-                    val n = entry.name.lowercase()
-                    if (!entry.isDirectory && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp"))) {
-                        pages.add(entry.name)
+                    if (!entry.isDirectory) {
+                        val ext = entry.name.substringAfterLast('.', "").lowercase()
+                        if (ext in imageExts) {
+                            pages.add(entry.name)
+                        }
                     }
                 }
             }
-            pages.sort()
+            pages.sortBy { it.lowercase() }
         } catch (e: Exception) {
-            // Si falla como ZIP, intentar como stream directo (para PDFs o imágenes sueltas)
-            pages.add("direct")
+            pages.clear()
         }
     }
 
     private fun showPage() {
-        if (pages.isEmpty()) return
-
-        if (pages[0] == "direct") {
-            singleImage.visibility = View.VISIBLE
-            leftImage.visibility = View.GONE
-            rightImage.visibility = View.GONE
-            val bmp = BitmapFactory.decodeFile(tempFile!!.absolutePath)
-            singleImage.setImageBitmap(bmp)
-            pageText.text = "1/1"
+        if (pages.isEmpty()) {
+            pageText.text = "0/0"
             return
         }
 
@@ -210,14 +209,14 @@ class ReaderActivity : Activity() {
     }
 
     private fun getPageBitmap(index: Int): Bitmap? {
-        if (index >= pages.size) return null
+        if (index >= pages.size || tempFile == null) return null
         return try {
             ZipFile(tempFile).use { zip ->
                 val entry = zip.getEntry(pages[index])
                 if (entry != null) {
                     zip.getInputStream(entry).use { stream ->
                         val opts = BitmapFactory.Options().apply {
-                            inSampleSize = 1
+                            inSampleSize = if (pages.size > 100) 2 else 1
                         }
                         BitmapFactory.decodeStream(stream, null, opts)
                     }
