@@ -30,36 +30,56 @@
         android:elevation="8dp">
 
         <TextView
+            android:id="@+id/tab_library"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:text="Library"
             android:gravity="center"
-            android:textColor="#111111" />
+            android:textColor="#ABABAB"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground" />
 
         <TextView
+            android:id="@+id/tab_search"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:text="Search"
             android:gravity="center"
-            android:textColor="#ABABAB" />
+            android:textColor="#ABABAB"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground" />
 
         <TextView
+            android:id="@+id/tab_reading"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:text="Reading"
             android:gravity="center"
-            android:textColor="#ABABAB" />
+            android:textColor="#ABABAB"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground" />
 
         <TextView
+            android:id="@+id/tab_favorites"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
             android:text="Favorites"
             android:gravity="center"
-            android:textColor="#ABABAB" />
+            android:textColor="#ABABAB"
+            android:textSize="12sp"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?attr/selectableItemBackground" />
 
     </LinearLayout>
 
