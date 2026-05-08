@@ -13,23 +13,17 @@ import android.widget.TextView
 import android.widget.Toast
 import android.graphics.Color
 import android.graphics.Bitmap
-import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
-import com.tom_roush.pdfbox.pdmodel.PDDocument
-import com.tom_roush.pdfbox.rendering.PDFRenderer
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipFile
 
 class ReaderActivity : Activity() {
 
     private var pages: MutableList<String> = mutableListOf()
-    private var pdfPages: Int = 0
     private var currentPage: Int = 0
     private var isDoublePage: Boolean = false
     private var tempFile: File? = null
-    private var isPdf: Boolean = false
-    private var pdfDocument: PDDocument? = null
 
-    private lateinit var mainLayout: LinearLayout
     private lateinit var singleImage: ImageView
     private lateinit var leftImage: ImageView
     private lateinit var rightImage: ImageView
@@ -42,35 +36,29 @@ class ReaderActivity : Activity() {
 
         val uri = Uri.parse(intent.getStringExtra("comic_uri") ?: "")
         val name = intent.getStringExtra("comic_name") ?: "Comic"
-        val type = intent.getStringExtra("comic_type") ?: ""
 
         if (uri == null) { finish(); return }
 
         isDoublePage = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        isPdf = type == "pdf"
-
         createLayout(name)
 
         Thread {
             try {
-                tempFile = File(cacheDir, "comic.$type")
+                tempFile = File(cacheDir, "comic_temp")
                 contentResolver.openInputStream(uri)?.use { input ->
                     tempFile!!.outputStream().use { output -> input.copyTo(output) }
                 }
 
-                if (isPdf) {
-                    loadPdf()
-                } else {
-                    loadArchive()
-                }
+                loadPages()
 
                 runOnUiThread {
                     currentPage = 0
-                    refreshView()
+                    showPage()
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                    finish()
                 }
             }
         }.start()
@@ -79,26 +67,23 @@ class ReaderActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         isDoublePage = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
-        refreshView()
+        showPage()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        pdfDocument?.close()
         tempFile?.delete()
     }
 
     private fun createLayout(name: String) {
-        mainLayout = LinearLayout(this).apply {
+        val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
         }
 
         topBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#CC000000"))
             setPadding(16, 30, 16, 10)
-            gravity = Gravity.CENTER_VERTICAL
         }
 
         topBar.addView(TextView(this).apply {
@@ -112,7 +97,7 @@ class ReaderActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         })
 
-        mainLayout.addView(topBar)
+        layout.addView(topBar)
 
         val pageLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -124,7 +109,6 @@ class ReaderActivity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
             visibility = View.GONE
-            setOnClickListener { prevPage() }
         }
         pageLayout.addView(leftImage)
 
@@ -132,7 +116,10 @@ class ReaderActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
-            setOnClickListener { toggleBars() }
+            setOnClickListener {
+                topBar.visibility = if (topBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                bottomBar.visibility = if (bottomBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            }
         }
         pageLayout.addView(singleImage)
 
@@ -141,14 +128,12 @@ class ReaderActivity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
             visibility = View.GONE
-            setOnClickListener { nextPage() }
         }
         pageLayout.addView(rightImage)
 
-        mainLayout.addView(pageLayout)
+        layout.addView(pageLayout)
 
         bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#CC000000"))
             setPadding(16, 10, 16, 30)
             gravity = Gravity.CENTER
@@ -171,100 +156,91 @@ class ReaderActivity : Activity() {
             setPadding(24, 12, 24, 12); setOnClickListener { nextPage() }
         })
 
-        mainLayout.addView(bottomBar)
-        setContentView(mainLayout)
+        layout.addView(bottomBar)
+        setContentView(layout)
     }
 
-    private fun loadArchive() {
+    private fun loadPages() {
         pages.clear()
-        ZipFile(tempFile).use { zip ->
-            val entries = zip.entries()
-            while (entries.hasMoreElements()) {
-                val entry = entries.nextElement()
-                val n = entry.name.lowercase()
-                if (!entry.isDirectory && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp"))) {
-                    pages.add(entry.name)
+        try {
+            ZipFile(tempFile).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val n = entry.name.lowercase()
+                    if (!entry.isDirectory && (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp"))) {
+                        pages.add(entry.name)
+                    }
                 }
             }
+            pages.sort()
+        } catch (e: Exception) {
+            // Si falla como ZIP, intentar como stream directo (para PDFs o imágenes sueltas)
+            pages.add("direct")
         }
-        pages.sort()
     }
 
-    private fun loadPdf() {
-        PDFBoxResourceLoader.init(this)
-        pdfDocument = PDDocument.load(tempFile)
-        pdfPages = pdfDocument!!.numberOfPages
-    }
-
-    private fun refreshView() {
-        if (isPdf) {
-            showPdfPage()
-        } else {
-            showArchivePage()
-        }
-        val total = if (isPdf) pdfPages else pages.size
-        pageText.text = "${currentPage + 1} / $total"
-    }
-
-    private fun showArchivePage() {
+    private fun showPage() {
         if (pages.isEmpty()) return
+
+        if (pages[0] == "direct") {
+            singleImage.visibility = View.VISIBLE
+            leftImage.visibility = View.GONE
+            rightImage.visibility = View.GONE
+            val bmp = BitmapFactory.decodeFile(tempFile!!.absolutePath)
+            singleImage.setImageBitmap(bmp)
+            pageText.text = "1/1"
+            return
+        }
 
         if (isDoublePage) {
             singleImage.visibility = View.GONE
             leftImage.visibility = View.VISIBLE
             rightImage.visibility = View.VISIBLE
-            leftImage.setImageBitmap(getArchiveBitmap(currentPage))
-            rightImage.setImageBitmap(if (currentPage + 1 < pages.size) getArchiveBitmap(currentPage + 1) else null)
+            leftImage.setImageBitmap(getPageBitmap(currentPage))
+            rightImage.setImageBitmap(if (currentPage + 1 < pages.size) getPageBitmap(currentPage + 1) else null)
         } else {
             leftImage.visibility = View.GONE
             rightImage.visibility = View.GONE
             singleImage.visibility = View.VISIBLE
-            singleImage.setImageBitmap(getArchiveBitmap(currentPage))
+            singleImage.setImageBitmap(getPageBitmap(currentPage))
         }
+
+        pageText.text = "${currentPage + 1} / ${pages.size}"
     }
 
-    private fun showPdfPage() {
-        try {
-            val renderer = PDFRenderer(pdfDocument!!)
-            val bitmap = renderer.renderImage(currentPage, 2f)
-            singleImage.visibility = View.VISIBLE
-            leftImage.visibility = View.GONE
-            rightImage.visibility = View.GONE
-            singleImage.setImageBitmap(bitmap)
-        } catch (e: Exception) { }
-    }
-
-    private fun getArchiveBitmap(index: Int): Bitmap? {
+    private fun getPageBitmap(index: Int): Bitmap? {
         if (index >= pages.size) return null
         return try {
             ZipFile(tempFile).use { zip ->
                 val entry = zip.getEntry(pages[index])
-                zip.getInputStream(entry).use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
+                if (entry != null) {
+                    zip.getInputStream(entry).use { stream ->
+                        val opts = BitmapFactory.Options().apply {
+                            inSampleSize = 1
+                        }
+                        BitmapFactory.decodeStream(stream, null, opts)
+                    }
+                } else null
             }
-        } catch (e: Exception) { null }
-    }
-
-    private fun toggleBars() {
-        topBar.visibility = if (topBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-        bottomBar.visibility = if (bottomBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun nextPage() {
-        val step = if (isDoublePage && !isPdf) 2 else 1
-        val total = if (isPdf) pdfPages else pages.size
-        if (currentPage + step < total) {
+        val step = if (isDoublePage) 2 else 1
+        if (currentPage + step < pages.size) {
             currentPage += step
-            refreshView()
+            showPage()
         }
     }
 
     private fun prevPage() {
-        val step = if (isDoublePage && !isPdf) 2 else 1
+        val step = if (isDoublePage) 2 else 1
         if (currentPage - step >= 0) {
             currentPage -= step
-            refreshView()
+            showPage()
         }
     }
 }

@@ -29,6 +29,4 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("com.github.junrar:junrar:7.5.4")
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
