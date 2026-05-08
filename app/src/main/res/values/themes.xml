@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.ComicReader" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#B71C1C</item>
+        <item name="android:statusBarColor">#B71C1C</item>
+    </style>
+</resources>
