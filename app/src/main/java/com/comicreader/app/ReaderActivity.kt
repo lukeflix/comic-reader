@@ -13,7 +13,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.graphics.Color
 import android.graphics.Bitmap
-import java.io.InputStream
+import java.io.File
 import java.util.zip.ZipFile
 
 class ReaderActivity : Activity() {
@@ -24,13 +24,13 @@ class ReaderActivity : Activity() {
     private var pages: MutableList<String> = mutableListOf()
     private var currentPage: Int = 0
     private var isDoublePage: Boolean = false
+    private var tempFile: File? = null
 
     private lateinit var mainLayout: LinearLayout
     private lateinit var topBar: LinearLayout
-    private lateinit var pageLayout: LinearLayout
+    private lateinit var singleImage: ImageView
     private lateinit var leftImage: ImageView
     private lateinit var rightImage: ImageView
-    private lateinit var singleImage: ImageView
     private lateinit var pageText: TextView
     private lateinit var bottomBar: LinearLayout
 
@@ -38,7 +38,7 @@ class ReaderActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         comicUri = Uri.parse(intent.getStringExtra("comic_uri") ?: "")
-        comicName = intent.getStringExtra("comic_name") ?: "Desconocido"
+        comicName = intent.getStringExtra("comic_name") ?: "Comic"
         comicType = intent.getStringExtra("comic_type") ?: ""
 
         if (comicUri == null) {
@@ -49,13 +49,19 @@ class ReaderActivity : Activity() {
 
         isDoublePage = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         createLayout()
-        loadComic()
+        copyToTemp()
+        loadPages()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         isDoublePage = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
-        refreshViewMode()
+        refreshView()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tempFile?.delete()
     }
 
     private fun createLayout() {
@@ -69,41 +75,26 @@ class ReaderActivity : Activity() {
             setBackgroundColor(Color.parseColor("#CC000000"))
             setPadding(16, 30, 16, 10)
             gravity = Gravity.CENTER_VERTICAL
-            visibility = View.VISIBLE
         }
 
-        val backBtn = TextView(this).apply {
+        topBar.addView(TextView(this).apply {
             text = "← Volver"
-            textSize = 16f
-            setTextColor(Color.WHITE)
+            textSize = 16f; setTextColor(Color.WHITE)
             setOnClickListener { finish() }
-        }
-        topBar.addView(backBtn)
+        })
 
-        val titleView = TextView(this).apply {
+        topBar.addView(TextView(this).apply {
             text = comicName
-            textSize = 16f
-            setTextColor(Color.WHITE)
+            textSize = 14f; setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        topBar.addView(titleView)
-
-        val pageNumTop = TextView(this).apply {
-            text = ""
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            id = 5555
-        }
-        topBar.addView(pageNumTop)
+        })
 
         mainLayout.addView(topBar)
 
-        pageLayout = LinearLayout(this).apply {
+        val pageLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
 
         leftImage = ImageView(this).apply {
@@ -115,9 +106,7 @@ class ReaderActivity : Activity() {
         pageLayout.addView(leftImage)
 
         singleImage = ImageView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.BLACK)
         }
@@ -133,15 +122,6 @@ class ReaderActivity : Activity() {
 
         mainLayout.addView(pageLayout)
 
-        setContentView(mainLayout)
-
-        singleImage.setOnClickListener { toggleBars() }
-        leftImage.setOnClickListener { prevPage() }
-        rightImage.setOnClickListener { nextPage() }
-    }
-
-    private fun createBottomBar() {
-        mainLayout.removeView(bottomBar)
         bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#CC000000"))
@@ -149,170 +129,113 @@ class ReaderActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        val prevBtn = TextView(this).apply {
+        bottomBar.addView(TextView(this).apply {
             text = "◀"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            setPadding(20, 10, 20, 10)
+            textSize = 24f; setTextColor(Color.WHITE)
+            setPadding(24, 12, 24, 12)
             setOnClickListener { prevPage() }
-        }
-        bottomBar.addView(prevBtn)
+        })
 
         pageText = TextView(this).apply {
             text = "0 / 0"
-            textSize = 14f
-            setTextColor(Color.WHITE)
+            textSize = 14f; setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         bottomBar.addView(pageText)
 
-        val nextBtn = TextView(this).apply {
+        bottomBar.addView(TextView(this).apply {
             text = "▶"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            setPadding(20, 10, 20, 10)
+            textSize = 24f; setTextColor(Color.WHITE)
+            setPadding(24, 12, 24, 12)
             setOnClickListener { nextPage() }
-        }
-        bottomBar.addView(nextBtn)
+        })
 
         mainLayout.addView(bottomBar)
-    }
 
-    private fun toggleBars() {
-        if (topBar.visibility == View.VISIBLE) {
-            topBar.visibility = View.GONE
-            if (::bottomBar.isInitialized) bottomBar.visibility = View.GONE
-        } else {
-            topBar.visibility = View.VISIBLE
-            if (::bottomBar.isInitialized) bottomBar.visibility = View.VISIBLE
+        setContentView(mainLayout)
+
+        singleImage.setOnClickListener {
+            topBar.visibility = if (topBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            bottomBar.visibility = if (bottomBar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
     }
 
-    private fun loadComic() {
+    private fun copyToTemp() {
         try {
-            if (comicType == "cbz") {
-                loadCbz()
-            } else if (comicType == "cbr") {
-                Toast.makeText(this, "CBR: Renombra a .cbz si es ZIP", Toast.LENGTH_LONG).show()
-                loadCbrAsZip()
-            } else {
-                Toast.makeText(this, "Formato no soportado: $comicType", Toast.LENGTH_LONG).show()
-                finish()
+            contentResolver.openInputStream(comicUri!!)?.use { input ->
+                tempFile = File(cacheDir, "comic_temp.${comicType}")
+                tempFile!!.outputStream().use { output -> input.copyTo(output) }
             }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Error al leer archivo", Toast.LENGTH_LONG).show()
+            finish()
+        }
+    }
+
+    private fun loadPages() {
+        if (tempFile == null || !tempFile!!.exists()) {
+            Toast.makeText(this, "Archivo no encontrado", Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
+        try {
+            ZipFile(tempFile).use { zip ->
+                val entries = zip.entries()
+                while (entries.hasMoreElements()) {
+                    val entry = entries.nextElement()
+                    val name = entry.name.lowercase()
+                    if (!entry.isDirectory && (name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp"))) {
+                        pages.add(entry.name)
+                    }
+                }
+            }
+            pages.sort()
+            
+            if (pages.isEmpty()) {
+                Toast.makeText(this, "Sin imágenes en el archivo", Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+
+            currentPage = 0
+            refreshView()
         } catch (e: Exception) {
             Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
         }
     }
 
-    private fun loadCbz() {
-        pages.clear()
-        contentResolver.openInputStream(comicUri!!)?.use { inputStream ->
-            val tempFile = java.io.File(cacheDir, "temp_comic.cbz")
-            tempFile.outputStream().use { inputStream.copyTo(it) }
-
-            ZipFile(tempFile).use { zip ->
-                val entries = zip.entries()
-                while (entries.hasMoreElements()) {
-                    val entry = entries.nextElement()
-                    if (!entry.isDirectory && entry.name.matches(Regex(".*\\.(jpg|jpeg|png|webp)$", RegexOption.IGNORE_CASE))) {
-                        pages.add(entry.name)
-                    }
-                }
-            }
-            tempFile.delete()
-        }
-        pages.sort()
-        currentPage = 0
-        createBottomBar()
-        refreshViewMode()
-    }
-
-    private fun loadCbrAsZip() {
-        pages.clear()
-        contentResolver.openInputStream(comicUri!!)?.use { inputStream ->
-            val tempFile = java.io.File(cacheDir, "temp_comic.cbr")
-            tempFile.outputStream().use { inputStream.copyTo(it) }
-
-            try {
-                ZipFile(tempFile).use { zip ->
-                    val entries = zip.entries()
-                    while (entries.hasMoreElements()) {
-                        val entry = entries.nextElement()
-                        if (!entry.isDirectory && entry.name.matches(Regex(".*\\.(jpg|jpeg|png|webp)$", RegexOption.IGNORE_CASE))) {
-                            pages.add(entry.name)
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Toast.makeText(this, "No se pudo abrir. Asegurate que sea ZIP", Toast.LENGTH_LONG).show()
-                finish()
-            }
-            tempFile.delete()
-        }
-        pages.sort()
-        currentPage = 0
-        createBottomBar()
-        refreshViewMode()
-    }
-
-    private fun refreshViewMode() {
+    private fun refreshView() {
         if (pages.isEmpty()) return
 
         if (isDoublePage) {
             singleImage.visibility = View.GONE
             leftImage.visibility = View.VISIBLE
             rightImage.visibility = View.VISIBLE
-            showDoublePage()
+            leftImage.setImageBitmap(getPageBitmap(currentPage))
+            rightImage.setImageBitmap(if (currentPage + 1 < pages.size) getPageBitmap(currentPage + 1) else null)
         } else {
             leftImage.visibility = View.GONE
             rightImage.visibility = View.GONE
             singleImage.visibility = View.VISIBLE
-            showSinglePage()
+            singleImage.setImageBitmap(getPageBitmap(currentPage))
         }
 
         pageText.text = "${currentPage + 1} / ${pages.size}"
-        val topPageNum = findViewById<TextView>(5555)
-        topPageNum?.text = "${currentPage + 1}/${pages.size}"
     }
 
-    private fun showSinglePage() {
-        val bitmap = extractPage(currentPage)
-        singleImage.setImageBitmap(bitmap)
-    }
-
-    private fun showDoublePage() {
-        val leftBmp = extractPage(currentPage)
-        leftImage.setImageBitmap(leftBmp)
-
-        if (currentPage + 1 < pages.size) {
-            val rightBmp = extractPage(currentPage + 1)
-            rightImage.setImageBitmap(rightBmp)
-        } else {
-            rightImage.setImageBitmap(null)
-        }
-    }
-
-    private fun extractPage(index: Int): Bitmap? {
-        if (index >= pages.size) return null
-
+    private fun getPageBitmap(index: Int): Bitmap? {
+        if (index >= pages.size || tempFile == null) return null
         return try {
-            contentResolver.openInputStream(comicUri!!)?.use { inputStream ->
-                val tempFile = java.io.File(cacheDir, "temp_page_$index")
-                tempFile.outputStream().use { inputStream.copyTo(it) }
-
-                var bitmap: Bitmap? = null
-                ZipFile(tempFile).use { zip ->
-                    val entry = zip.getEntry(pages[index])
-                    if (entry != null) {
-                        val pageStream = zip.getInputStream(entry)
-                        bitmap = BitmapFactory.decodeStream(pageStream)
-                        pageStream.close()
+            ZipFile(tempFile).use { zip ->
+                val entry = zip.getEntry(pages[index])
+                if (entry != null) {
+                    zip.getInputStream(entry).use { stream ->
+                        BitmapFactory.decodeStream(stream)
                     }
-                }
-                tempFile.delete()
-                bitmap
+                } else null
             }
         } catch (e: Exception) {
             null
@@ -323,7 +246,7 @@ class ReaderActivity : Activity() {
         val step = if (isDoublePage) 2 else 1
         if (currentPage + step < pages.size) {
             currentPage += step
-            refreshViewMode()
+            refreshView()
         }
     }
 
@@ -331,7 +254,7 @@ class ReaderActivity : Activity() {
         val step = if (isDoublePage) 2 else 1
         if (currentPage - step >= 0) {
             currentPage -= step
-            refreshViewMode()
+            refreshView()
         }
     }
 }
