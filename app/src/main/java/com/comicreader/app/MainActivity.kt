@@ -1,10 +1,10 @@
 package com.comicreader.app
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -43,9 +43,7 @@ class MainActivity : AppCompatActivity() {
         tab3.setOnClickListener { selectTab(2) }
         tab4.setOnClickListener { selectTab(3) }
         
-        // Pedir permisos
         requestPermissions()
-        
         selectTab(0)
     }
     
@@ -88,7 +86,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(24, 24, 24, 24)
         }
         
-        // Título
         layout.addView(TextView(this).apply {
             text = "📚 Mi Biblioteca"
             textSize = 20f
@@ -96,7 +93,6 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, 0, 0, 16)
         })
         
-        // Botón para escanear
         val scanButton = TextView(this).apply {
             text = "🔍 ESCANEAR CÓMICS"
             textSize = 14f
@@ -104,19 +100,15 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#B71C1C"))
             setPadding(32, 16, 32, 16)
-            setOnClickListener {
-                scanComics(layout)
-            }
+            setOnClickListener { scanComics(layout) }
         }
         layout.addView(scanButton)
         
-        // Espacio
         layout.addView(View(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 16)
         })
         
-        // Lista de cómics
         if (comics.isEmpty()) {
             layout.addView(TextView(this).apply {
                 text = "No hay cómics encontrados.\nToca el botón para escanear."
@@ -143,7 +135,6 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         
-        // Icono según tipo
         val icon = when(comic.type) {
             "cbr", "cbz" -> "📖"
             "pdf" -> "📄"
@@ -181,11 +172,10 @@ class MainActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.parseColor("#B71C1C"))
             setOnClickListener {
-                Toast.makeText(this@MainActivity, "Abriendo: ${comic.name}", Toast.LENGTH_SHORT).show()
+                openComic(comic)
             }
         })
         
-        // Separador
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -199,6 +189,14 @@ class MainActivity : AppCompatActivity() {
         return container
     }
     
+    private fun openComic(comic: ComicFile) {
+        val intent = Intent(this, ReaderActivity::class.java).apply {
+            putExtra("comic_path", comic.path)
+            putExtra("comic_name", comic.name)
+        }
+        startActivity(intent)
+    }
+    
     private fun scanComics(layout: LinearLayout) {
         Toast.makeText(this, "Escaneando...", Toast.LENGTH_SHORT).show()
         
@@ -206,7 +204,6 @@ class MainActivity : AppCompatActivity() {
             comics = comicScanner.scanDevice()
             
             runOnUiThread {
-                // Refrescar la pestaña
                 selectTab(0)
                 Toast.makeText(this, "Encontrados: ${comics.size} cómics", Toast.LENGTH_SHORT).show()
             }
