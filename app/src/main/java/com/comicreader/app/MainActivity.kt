@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.provider.DocumentsContract
 import android.widget.TextView
 import android.widget.LinearLayout
@@ -12,7 +11,6 @@ import android.widget.ScrollView
 import android.widget.Toast
 import android.graphics.Color
 import android.view.Gravity
-import java.io.File
 
 class MainActivity : Activity() {
 
@@ -31,24 +29,19 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.parseColor("#F7F7F5"))
         }
 
-        val title = TextView(this).apply {
+        layout.addView(TextView(this).apply {
             text = "Comic Reader"
             textSize = 22f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#B71C1C"))
             gravity = Gravity.CENTER
             setPadding(0, 40, 0, 40)
-        }
-        layout.addView(title)
+        })
 
-        bodyContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        bodyContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
             addView(bodyContainer)
         }
         layout.addView(scrollView)
@@ -59,8 +52,7 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, 20)
         }
 
-        val tabNames = listOf("Library", "Search", "Reading", "Favs")
-        tabNames.forEachIndexed { index, name ->
+        listOf("Library", "Search", "Reading", "Favs").forEachIndexed { index, name ->
             val tab = TextView(this).apply {
                 text = name
                 gravity = Gravity.CENTER
@@ -68,52 +60,17 @@ class MainActivity : Activity() {
                 setPadding(10, 30, 10, 30)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnClickListener {
-                    for (i in 0 until tabs.childCount) {
+                    for (i in 0 until tabs.childCount)
                         (tabs.getChildAt(i) as TextView).setTextColor(Color.parseColor("#ABABAB"))
-                    }
                     setTextColor(Color.parseColor("#111111"))
-                    showTabContent(index)
+                    showTab(index)
                 }
             }
             tabs.addView(tab)
         }
         layout.addView(tabs)
-
         setContentView(layout)
         (tabs.getChildAt(0) as TextView).performClick()
-        
-        checkIntentForFile(intent)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        checkIntentForFile(intent)
-    }
-
-    private fun checkIntentForFile(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_VIEW) {
-            intent.data?.let { uri ->
-                val name = getFileName(uri)
-                val path = uri.toString()
-                val ext = name.substringAfterLast('.', "").lowercase()
-                if (ext in listOf("cbr", "cbz", "pdf", "epub")) {
-                    comics.add(ComicItem(name, path, ext))
-                    showLibraryTab()
-                    Toast.makeText(this, "$name agregado", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String {
-        var name = "desconocido"
-        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0) name = cursor.getString(idx)
-            }
-        }
-        return name
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -121,32 +78,23 @@ class MainActivity : Activity() {
 
         if (requestCode == PICK_FOLDER && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
-                val folderName = getFileName(uri)
-                scanFolderUri(uri)
-                showLibraryTab()
-                Toast.makeText(this, "Carpeta: $folderName", Toast.LENGTH_SHORT).show()
+                scanFolder(uri)
+                showTab(0)
             }
         }
 
         if (requestCode == PICK_FILE && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
-                val name = getFileName(uri)
-                val path = uri.toString()
-                val ext = name.substringAfterLast('.', "").lowercase()
-                if (ext in listOf("cbr", "cbz", "pdf", "epub")) {
-                    comics.add(ComicItem(name, path, ext))
-                    showLibraryTab()
-                    Toast.makeText(this, "$name agregado", Toast.LENGTH_SHORT).show()
-                }
+                addFile(uri)
+                showTab(0)
             }
         }
     }
 
-    private fun scanFolderUri(folderUri: Uri) {
-        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
-            folderUri, DocumentsContract.getTreeDocumentId(folderUri)
-        )
-        
+    private fun scanFolder(folderUri: Uri) {
+        val docId = DocumentsContract.getTreeDocumentId(folderUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(folderUri, docId)
+
         contentResolver.query(childrenUri, arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -157,13 +105,12 @@ class MainActivity : Activity() {
                 val mime = cursor.getString(2) ?: continue
                 if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     val childId = cursor.getString(0)
-                    val childUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, childId)
-                    scanFolderUri(childUri)
+                    scanFolder(DocumentsContract.buildDocumentUriUsingTree(folderUri, childId))
                 } else {
                     val ext = name.substringAfterLast('.', "").lowercase()
                     if (ext in listOf("cbr", "cbz", "pdf", "epub")) {
-                        val docId = cursor.getString(0)
-                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, docId)
+                        val fileId = cursor.getString(0)
+                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, fileId)
                         comics.add(ComicItem(name, fileUri.toString(), ext))
                     }
                 }
@@ -171,108 +118,100 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showTabContent(index: Int) {
+    private fun addFile(uri: Uri) {
+        var name = "desconocido"
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) name = cursor.getString(idx)
+            }
+        }
+        val ext = name.substringAfterLast('.', "").lowercase()
+        if (ext in listOf("cbr", "cbz", "pdf", "epub")) {
+            comics.add(ComicItem(name, uri.toString(), ext))
+        }
+    }
+
+    private fun showTab(index: Int) {
         bodyContainer.removeAllViews()
-        if (index == 0) showLibraryTab()
+        if (index == 0) showLibrary()
         else {
             bodyContainer.addView(TextView(this).apply {
                 text = when(index) { 1 -> "Buscar" 2 -> "Lectura" else -> "Favoritos" }
                 textSize = 16f; gravity = Gravity.CENTER
-                setTextColor(Color.parseColor("#666666"))
-                setPadding(40, 80, 40, 40)
+                setTextColor(Color.parseColor("#666666")); setPadding(40, 80, 40, 40)
             })
         }
     }
 
-    private fun showLibraryTab() {
-        val btnSelectFolder = TextView(this).apply {
+    private fun showLibrary() {
+        bodyContainer.addView(TextView(this).apply {
             text = "SELECCIONAR CARPETA"
             textSize = 14f; gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#B71C1C"))
+            setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#B71C1C"))
             setPadding(32, 20, 32, 20)
-            setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                startActivityForResult(intent, PICK_FOLDER)
-            }
-        }
-        bodyContainer.addView(btnSelectFolder)
+            setOnClickListener { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER) }
+        })
 
-        val btnSelectFile = TextView(this).apply {
+        bodyContainer.addView(TextView(this).apply {
             text = "SELECCIONAR ARCHIVO"
             textSize = 14f; gravity = Gravity.CENTER
-            setTextColor(Color.parseColor("#B71C1C"))
-            setBackgroundColor(Color.parseColor("#FFFFFF"))
+            setTextColor(Color.parseColor("#B71C1C")); setBackgroundColor(Color.WHITE)
             setPadding(32, 20, 32, 20)
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = 8 }
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 8 }
             setOnClickListener {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                        "application/x-cbr", "application/x-cbz",
-                        "application/pdf", "application/epub+zip",
-                        "application/octet-stream"
-                    ))
-                }
-                startActivityForResult(intent, PICK_FILE)
+                startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                }, PICK_FILE)
             }
-        }
-        bodyContainer.addView(btnSelectFile)
+        })
 
         if (comics.isEmpty()) {
             bodyContainer.addView(TextView(this).apply {
                 text = "\nSin comics\nUsa los botones para agregar"
                 textSize = 14f; gravity = Gravity.CENTER
-                setTextColor(Color.parseColor("#999999"))
-                setPadding(20, 30, 20, 20)
+                setTextColor(Color.parseColor("#999999")); setPadding(20, 30, 20, 20)
             })
         } else {
             bodyContainer.addView(TextView(this).apply {
-                text = "\n${comics.size} comics cargados:"
-                textSize = 14f
-                setTextColor(Color.parseColor("#111111"))
-                setPadding(20, 20, 20, 10)
+                text = "\n${comics.size} comics:"
+                textSize = 14f; setTextColor(Color.parseColor("#111111")); setPadding(20, 20, 20, 10)
             })
 
-            for ((idx, comic) in comics.withIndex()) {
+            comics.forEachIndexed { idx, comic ->
                 val item = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setBackgroundColor(Color.WHITE)
-                    setPadding(16, 12, 16, 12)
-                    gravity = Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { topMargin = 4 }
+                    orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.WHITE)
+                    setPadding(16, 12, 16, 12); gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 4 }
                 }
 
                 item.addView(TextView(this@MainActivity).apply {
-                    text = comic.type.uppercase()
-                    textSize = 12f
-                    setTextColor(Color.parseColor("#B71C1C"))
-                    setPadding(0, 0, 12, 0)
+                    text = comic.type.uppercase(); textSize = 12f
+                    setTextColor(Color.parseColor("#B71C1C")); setPadding(0, 0, 12, 0)
                 })
 
                 item.addView(TextView(this@MainActivity).apply {
-                    text = comic.name
-                    textSize = 14f
+                    text = comic.name; textSize = 14f
                     setTextColor(Color.parseColor("#111111"))
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 })
 
-                val deleteBtn = TextView(this@MainActivity).apply {
-                    text = "X"
-                    textSize = 16f
-                    setTextColor(Color.parseColor("#FF0000"))
-                    setPadding(12, 0, 0, 0)
+                item.addView(TextView(this@MainActivity).apply {
+                    text = "▶"; textSize = 18f; setTextColor(Color.parseColor("#B71C1C")); setPadding(8, 0, 8, 0)
                     setOnClickListener {
-                        comics.removeAt(idx)
-                        showLibraryTab()
+                        val intent = Intent(this@MainActivity, ReaderActivity::class.java).apply {
+                            putExtra("comic_uri", comic.path)
+                            putExtra("comic_name", comic.name)
+                            putExtra("comic_type", comic.type)
+                        }
+                        startActivity(intent)
                     }
-                }
-                item.addView(deleteBtn)
+                })
+
+                item.addView(TextView(this@MainActivity).apply {
+                    text = "X"; textSize = 16f; setTextColor(Color.parseColor("#FF0000"))
+                    setOnClickListener { comics.removeAt(idx); showLibrary() }
+                })
 
                 bodyContainer.addView(item)
             }
